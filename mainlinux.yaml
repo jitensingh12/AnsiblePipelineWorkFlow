@@ -1,1 +1,92 @@
-######## this is the file for CW workflow
+######## this workflow will work in any agent installation and generate report. 
+####Installation role need to be added accordingly (under any-agent-installation-role mentioned below).
+### Workflow is dynamic and OS params will execute according to conditions in under role tasks.
+---
+- hosts: linux
+  gather_facts: yes
+  ignore_unreachable: yes
+  serial: 1
+  #become: true
+  #
+  tasks:
+
+  - block:
+
+     - name: Create CSV file for Failed installation
+       file:
+         path: './cw_failed.csv'
+         state: touch
+       become: false
+       changed_when: True
+       run_once: True
+       delegate_to: localhost
+
+      - name: Setting heading for CSV
+        lineinfile:
+          path: ./cw_failed.csv
+          line: 'IP_ADDRESS,CloudWatch Status,Date'
+          #regexp: "^IP_ADDRESS"
+        delegate_to: localhost
+        changed_when: True
+        run_once: True	
+      
+      - name: Creating CSV
+        file:
+          path: './cw_install.csv'
+          state: touch
+        become: false
+        changed_when: True
+        run_once: True
+        delegate_to: localhost
+
+      - name: Setting header
+        lineinfile:
+          path: './cw_install.csv'
+          line: 'IP_ADDRESS,CloudWatch Status,Date'
+          #regexp: "^IP_ADDRESS"
+        delegate_to: localhost
+        changed_when: True
+        run_once: True
+
+      - debug:
+          msg: "printing IP {{ item }}"
+       #with_items: "{{ ansible_play_batch }}"
+        loop: "{{ ansible_play_batch }}"
+        register: test
+
+      - debug:
+          var=test
+
+      - name: Test for user1
+        local_action: shell ssh -i /home/jsingh10/jj/key.pem  -o StrictHostKeyChecking=no "{{username}}"@"{{ item.item }}" "exit"
+        register: user1_enabled
+        ignore_errors: yes
+        async: 10
+        poll: 2
+        ignore_unreachable: yes
+        delegate_to: localhost
+        with_items: "{{ test.results }}"
+
+      - debug:
+          var=user1_enabled
+
+      - name: Conditional role
+        include_role:
+          name: any-agent-installation-role
+        ignore_errors: yes
+       #when: user1_enabled.rc == 0
+        when: user1_enabled.changed == true
+
+
+      - name: update the details of installation
+        lineinfile:
+          path: './cw_failed.csv'
+          line: "{{ item.item }},Failed CW Installation,"
+        delegate_to: localhost
+        with_items: "{{ test.results }}"
+        ignore_errors: yes
+       #when: user1_enabled.rc != 0
+        when: user1_enabled.changed == false
+
+    become: true
+    ignore_unreachable: yes
